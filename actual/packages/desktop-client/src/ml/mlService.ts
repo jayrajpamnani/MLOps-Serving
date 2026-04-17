@@ -5,10 +5,15 @@
  * ACTUAL_ML_SERVING_URL or falls back to the default.
  */
 
+const browserDefaultServingUrl =
+  typeof window !== 'undefined'
+    ? `${window.location.protocol}//${window.location.hostname}:8000`
+    : 'http://localhost:8000';
+
 const ML_SERVING_URL =
   (typeof window !== 'undefined' &&
     (window as Record<string, unknown>).__ML_SERVING_URL__) ||
-  'http://localhost:8000';
+  browserDefaultServingUrl;
 
 // ── Types ───────────────────────────────────────────────────────────────────
 

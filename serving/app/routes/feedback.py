@@ -6,7 +6,7 @@ from datetime import date, datetime
 from fastapi import APIRouter
 
 from app import db
-from app.models import FeedbackRequest, StatusResponse
+from app.models import FeedbackExportRow, FeedbackRequest, StatusResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -38,7 +38,7 @@ async def submit_feedback(req: FeedbackRequest) -> StatusResponse:
     return StatusResponse(status="ok")
 
 
-@router.get("/feedback/export")
-async def export_feedback() -> list[dict]:
+@router.get("/feedback/export", response_model=list[FeedbackExportRow])
+async def export_feedback() -> list[FeedbackExportRow]:
     """Expose reviewed layer-1 feedback for Saketh's batch pipeline."""
     return await db.export_feedback()

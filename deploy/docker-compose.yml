@@ -1,0 +1,31 @@
+services:
+  serving:
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
+    image: ml-serving:latest
+    build:
+      context: ../serving
+      dockerfile: Dockerfile
+    container_name: ml-serving
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    restart: unless-stopped
+
+  actual:
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
+    image: actual-custom:latest
+    build:
+      context: ../actual
+      dockerfile: sync-server.Dockerfile
+      args:
+        BUILD_NODE_MEMORY_MB: ${ACTUAL_BUILD_NODE_MEMORY_MB:-4096}
+    container_name: actual-budget
+    ports:
+      - "5006:5006"
+    volumes:
+      - actual-data:/data
+    restart: unless-stopped
+
+volumes:
+  actual-data:

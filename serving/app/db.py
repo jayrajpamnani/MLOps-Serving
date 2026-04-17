@@ -127,7 +127,7 @@ async def export_feedback() -> list[dict[str, Any]]:
     async with _pool.acquire() as conn:
         rows = await conn.fetch(
             """
-            SELECT id, transaction_id, user_id, payee, amount,
+            SELECT transaction_id, user_id, payee, amount,
                    date::text AS date, original_prediction, original_confidence,
                    source, final_label, reviewed_by_user, timestamp::text AS timestamp
             FROM feedback_store

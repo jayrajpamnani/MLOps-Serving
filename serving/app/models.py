@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from datetime import date, datetime
 from enum import Enum
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -10,18 +9,23 @@ from pydantic import BaseModel, Field
 # ── /classify ────────────────────────────────────────────────────────────────
 
 class ClassifyRequest(BaseModel):
-    account: str = Field(..., description="User / account ID")
+    transaction_id: str = Field(..., description="External transaction identifier")
+    user_id: str = Field(
+        ...,
+        description="ActualBudget account UUID used as the user identifier",
+    )
+    payee: str = Field(..., description="Raw payee / merchant string")
+    amount: float = Field(..., description="Signed amount in dollars (negative = expense)")
     date: str = Field(..., description="Transaction date YYYY-MM-DD")
-    amount: int = Field(..., description="Amount in cents (negative = expense)")
-    payee_name: str = Field(..., description="Raw payee / merchant string")
-    imported_id: str = Field("", description="External transaction identifier")
 
 
 class ClassifyResponse(BaseModel):
-    category: str
-    confidence: float
-    source: str = Field(description="'layer1' or 'layer2'")
-    model_version: str
+    transaction_id: str
+    user_id: str
+    prediction_category: str
+    confidence: Optional[float]
+    model_version: Optional[str]
+    source: Literal["layer1", "layer2"]
 
 
 # ── /feedback ────────────────────────────────────────────────────────────────
@@ -52,6 +56,20 @@ class FeedbackRow(BaseModel):
     source: str
     final_label: str
     reviewed_by_user: bool
+    timestamp: str
+
+
+class FeedbackExportRow(BaseModel):
+    transaction_id: str
+    user_id: str
+    payee: str
+    amount: int
+    date: str
+    original_prediction: Optional[str]
+    original_confidence: Optional[float]
+    source: Literal["layer1"]
+    final_label: str
+    reviewed_by_user: Literal[True]
     timestamp: str
 
 

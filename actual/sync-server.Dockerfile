@@ -28,8 +28,9 @@ WORKDIR /app
 
 COPY packages/ ./packages/
 
-# Increase memory limit for the build process to 8GB
-ENV NODE_OPTIONS=--max_old_space_size=8192
+# Keep the frontend/server build inside the limits of smaller VMs.
+ARG BUILD_NODE_MEMORY_MB=4096
+ENV NODE_OPTIONS=--max_old_space_size=${BUILD_NODE_MEMORY_MB}
 
 RUN yarn build:server
 
