@@ -1,0 +1,16 @@
+# Virtual environments
+.venv/
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
+.yarn/install-state.gz
+
+# OS files
+.DS_Store
+
+# PDFs to exclude
+Our understanding of the Project..pdf
+proj06-shared-infra.pdf
+system_implementation_milestone.pdf
