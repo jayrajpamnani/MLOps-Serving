@@ -32,6 +32,23 @@ export interface ClassifyResponse {
   model_version: string;
 }
 
+interface APIClassifyRequest {
+  transaction_id: string;
+  user_id: string;
+  payee: string;
+  amount: number;
+  date: string;
+}
+
+interface APIClassifyResponse {
+  transaction_id: string;
+  user_id: string;
+  prediction_category: string;
+  confidence: number | null;
+  source: string;
+  model_version: string | null;
+}
+
 export interface FeedbackPayload {
   transaction_id: string;
   user_id: string;
@@ -88,7 +105,25 @@ async function get<T>(path: string): Promise<T | null> {
 export async function classifyTransaction(
   req: ClassifyRequest,
 ): Promise<ClassifyResponse | null> {
-  return post<ClassifyResponse>('/classify', req);
+  const payload: APIClassifyRequest = {
+    transaction_id: req.imported_id,
+    user_id: req.account,
+    payee: req.payee_name,
+    amount: req.amount,
+    date: req.date,
+  };
+
+  const result = await post<APIClassifyResponse>('/classify', payload);
+  if (!result) {
+    return null;
+  }
+
+  return {
+    category: result.prediction_category,
+    confidence: result.confidence ?? 1,
+    source: result.source,
+    model_version: result.model_version ?? '',
+  };
 }
 
 export async function submitFeedback(

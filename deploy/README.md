@@ -58,3 +58,34 @@ After deployment:
 
 - FastAPI docs: `http://<FLOATING_IP>:8000/docs`
 - Actual Budget: `http://<FLOATING_IP>:5006`
+
+## Using cluster-internal PostgreSQL from a separate lease
+
+If your serving VM is outside the shared Kubernetes lease, do not expose
+PostgreSQL publicly. Instead, tunnel it through the cluster-access VM:
+
+1. On the serving VM, run an SSH session to the cluster VM over the private
+   `10.56.0.0/22` network.
+2. In that SSH session, run `kubectl -n mlops port-forward` on the cluster VM.
+3. Point `POSTGRES_DSN` at `host.docker.internal:<local_port>` so the container
+   reaches the host-side tunnel instead of trying `localhost` inside the
+   container.
+
+This keeps PostgreSQL bound to loopback on both machines and avoids changing
+cluster services or publishing the database on the public internet.
+
+## Browser DB viewer
+
+Adminer can run on the serving VM at:
+
+```text
+http://129.114.25.161:8080
+```
+
+Adminer login values for this setup:
+
+- System: `PostgreSQL`
+- Server: `host.docker.internal:15432`
+- Username: `mlops_user`
+- Password: `mlops_pass`
+- Database: `mlops`

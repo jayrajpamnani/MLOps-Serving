@@ -31,7 +31,7 @@ async def classify_transaction(req: ClassifyRequest) -> ClassifyResponse:
             transaction_id=req.transaction_id,
             user_id=req.user_id,
             prediction_category=category,
-            confidence=None,
+            confidence=round(similarity, 4),
             source="layer2",
             model_version=None,
         )

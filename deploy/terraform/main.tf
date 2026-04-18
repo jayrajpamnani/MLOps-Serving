@@ -2,7 +2,7 @@
 
 resource "openstack_networking_secgroup_v2" "serving_sg" {
   name        = "${var.instance_name}-sg"
-  description = "Allow SSH, FastAPI (8000), Actual Budget (5006)"
+  description = "Allow SSH, FastAPI (8000), Adminer (8080), Actual Budget (5006)"
 }
 
 resource "openstack_networking_secgroup_rule_v2" "ssh" {
@@ -31,6 +31,16 @@ resource "openstack_networking_secgroup_rule_v2" "actual_budget" {
   protocol          = "tcp"
   port_range_min    = 5006
   port_range_max    = 5006
+  remote_ip_prefix  = "0.0.0.0/0"
+  security_group_id = openstack_networking_secgroup_v2.serving_sg.id
+}
+
+resource "openstack_networking_secgroup_rule_v2" "adminer" {
+  direction         = "ingress"
+  ethertype         = "IPv4"
+  protocol          = "tcp"
+  port_range_min    = 8080
+  port_range_max    = 8080
   remote_ip_prefix  = "0.0.0.0/0"
   security_group_id = openstack_networking_secgroup_v2.serving_sg.id
 }

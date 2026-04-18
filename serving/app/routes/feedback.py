@@ -1,7 +1,7 @@
 """POST /feedback  +  GET /feedback/export"""
 
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter
 
@@ -14,7 +14,16 @@ router = APIRouter()
 
 @router.post("/feedback", response_model=StatusResponse)
 async def submit_feedback(req: FeedbackRequest) -> StatusResponse:
-    ts = datetime.fromisoformat(req.timestamp) if req.timestamp else datetime.utcnow()
+    if req.timestamp:
+        raw_ts = req.timestamp.replace("Z", "+00:00")
+        parsed_ts = datetime.fromisoformat(raw_ts)
+        ts = (
+            parsed_ts.astimezone(timezone.utc).replace(tzinfo=None)
+            if parsed_ts.tzinfo is not None
+            else parsed_ts
+        )
+    else:
+        ts = datetime.utcnow()
 
     try:
         parsed_date = date.fromisoformat(req.date)

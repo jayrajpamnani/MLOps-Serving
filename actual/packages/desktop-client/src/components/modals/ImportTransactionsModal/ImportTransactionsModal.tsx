@@ -1,5 +1,11 @@
 // @ts-strict-ignore
-import React, { useCallback, useEffect, useEffectEvent, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useState,
+} from 'react';
 import type {
   ComponentProps,
   Dispatch,
@@ -197,10 +203,18 @@ export function ImportTransactionsModal({
   >('parsing');
 
   // ML post-import review
+  type MLPrediction = {
+    id: string;
+    payee: string;
+    amount: number;
+    date: string;
+    predictedCategory: string;
+    selectedCategory: string;
+    confidence: number;
+    source: string;
+  };
   const [mlReviewPhase, setMlReviewPhase] = useState(false);
-  const [mlPreds, setMlPreds] = useState<
-    { id: string; payee: string; amount: number; date: string; category: string; confidence: number; source: string }[]
-  >([]);
+  const [mlPreds, setMlPreds] = useState<MLPrediction[]>([]);
   const [mlAction, setMlAction] = useState<'pending' | 'confirmed' | 'rejected'>('pending');
   const [mlApplied, setMlApplied] = useState<{ id: string }[]>([]);
   const [error, setError] = useState<{
@@ -257,6 +271,26 @@ export function ImportTransactionsModal({
   const [camtSwapPayeeAndMemo, setCamtSwapPayeeAndMemo] = useState(
     String(prefs[`camt-swap-payee-memo-${accountId}`]) === 'true',
   );
+
+  const mlCategoryOptions = useMemo(() => {
+    const names = new Set<string>();
+    categories.forEach(category => names.add(category.name));
+    mlPreds.forEach(prediction => {
+      if (prediction.predictedCategory) {
+        names.add(prediction.predictedCategory);
+      }
+      if (prediction.selectedCategory) {
+        names.add(prediction.selectedCategory);
+      }
+    });
+
+    return [
+      ['', t('(none)')] as const,
+      ...Array.from(names)
+        .sort((a, b) => a.localeCompare(b))
+        .map(name => [name, name] as const),
+    ];
+  }, [categories, mlPreds, t]);
 
   const [parseDateFormat, setParseDateFormat] = useState<DateFormat | null>(
     null,
@@ -752,7 +786,16 @@ export function ImportTransactionsModal({
                     date: tx.date || '',
                   });
                   if (r && r.confidence >= 0.5) {
-                    preds.push({ id: tx.id, payee: payeeName, amount: tx.amount || 0, date: tx.date || '', category: r.category, confidence: r.confidence, source: r.source });
+                    preds.push({
+                      id: tx.id,
+                      payee: payeeName,
+                      amount: tx.amount || 0,
+                      date: tx.date || '',
+                      predictedCategory: r.category,
+                      selectedCategory: r.category,
+                      confidence: r.confidence,
+                      source: r.source,
+                    });
                   }
                 } catch { /* skip */ }
               }),
@@ -876,24 +919,110 @@ export function ImportTransactionsModal({
     reimportDeleted,
   ]);
 
-  async function mlConfirmAll() {
-    const applied: { id: string }[] = [];
+  const ensureCategoryIds = useEffectEvent(async (categoryNames: string[]) => {
     const catNameToId: Record<string, string> = {};
     for (const c of categories) catNameToId[c.name] = c.id;
 
-    const needed = new Set(mlPreds.map(p => p.category).filter(n => !catNameToId[n]));
+    const needed = new Set(
+      categoryNames.filter(name => name && !catNameToId[name]),
+    );
     if (needed.size > 0) {
-      let gid: string | undefined = categoryGroups.find(g => g.name === 'ML Predictions')?.id;
-      if (!gid) { try { gid = await send('category-group-create', { name: 'ML Predictions' }); } catch {} }
+      let gid: string | undefined = categoryGroups.find(
+        group => group.name === 'ML Predictions',
+      )?.id;
+      if (!gid) {
+        try {
+          gid = await send('category-group-create', { name: 'ML Predictions' });
+        } catch {}
+      }
       for (const name of needed) {
-        try { const nid = await send('category-create', { name, groupId: gid }); if (nid) catNameToId[name] = nid; } catch {}
+        try {
+          const nid = await send('category-create', { name, groupId: gid });
+          if (nid) catNameToId[name] = nid;
+        } catch {}
       }
     }
+
+    return catNameToId;
+  });
+
+  const recordMlFeedback = useEffectEvent((prediction: MLPrediction, finalLabel: string) => {
+    void submitFeedback({
+      transaction_id: prediction.id,
+      user_id: accountId,
+      payee: prediction.payee,
+      amount: prediction.amount,
+      date: prediction.date,
+      original_prediction: prediction.predictedCategory,
+      original_confidence: prediction.confidence,
+      source: prediction.source,
+      final_label: finalLabel,
+      reviewed_by_user: true,
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  const onMlCategoryChange = useEffectEvent(async (predictionId: string, nextCategory: string) => {
+    const currentPrediction = mlPreds.find(prediction => prediction.id === predictionId);
+    if (!currentPrediction) {
+      return;
+    }
+
+    const nextPrediction = {
+      ...currentPrediction,
+      selectedCategory: nextCategory,
+    };
+
+    setMlPreds(prev =>
+      prev.map(prediction =>
+        prediction.id === predictionId ? nextPrediction : prediction,
+      ),
+    );
+
+    if (mlAction === 'pending') {
+      return;
+    }
+
+    const catNameToId = await ensureCategoryIds(nextCategory ? [nextCategory] : []);
+    const cid = nextCategory ? catNameToId[nextCategory] : null;
+
+    try {
+      await send('api/transaction-update', {
+        id: predictionId,
+        fields: { category: cid || null },
+      });
+      void queryClient.invalidateQueries(payeeQueries.list());
+    } catch {}
+
+    recordMlFeedback(nextPrediction, nextCategory);
+    setMlApplied(prev =>
+      nextCategory
+        ? prev.some(item => item.id === predictionId)
+          ? prev
+          : [...prev, { id: predictionId }]
+        : prev.filter(item => item.id !== predictionId),
+    );
+  });
+
+  async function mlConfirmAll() {
+    const applied: { id: string }[] = [];
+    const catNameToId = await ensureCategoryIds(
+      mlPreds.map(prediction => prediction.selectedCategory),
+    );
+
     for (const p of mlPreds) {
-      const cid = catNameToId[p.category];
-      if (!cid) continue;
-      try { await send('api/transaction-update', { id: p.id, fields: { category: cid } }); applied.push({ id: p.id }); } catch {}
-      void submitFeedback({ transaction_id: p.id, user_id: accountId, payee: p.payee, amount: p.amount, date: p.date, original_prediction: p.category, original_confidence: p.confidence, source: p.source, final_label: p.category, reviewed_by_user: true, timestamp: new Date().toISOString() });
+      const finalLabel = p.selectedCategory;
+      const cid = finalLabel ? catNameToId[finalLabel] : null;
+      if (cid) {
+        try {
+          await send('api/transaction-update', {
+            id: p.id,
+            fields: { category: cid },
+          });
+          applied.push({ id: p.id });
+        } catch {}
+      }
+      recordMlFeedback(p, finalLabel);
     }
     void queryClient.invalidateQueries(payeeQueries.list());
     setMlApplied(applied);
@@ -902,7 +1031,7 @@ export function ImportTransactionsModal({
 
   function mlRejectAll() {
     for (const p of mlPreds) {
-      void submitFeedback({ transaction_id: p.id, user_id: accountId, payee: p.payee, amount: p.amount, date: p.date, original_prediction: p.category, original_confidence: p.confidence, source: p.source, final_label: '', reviewed_by_user: true, timestamp: new Date().toISOString() });
+      recordMlFeedback(p, '');
     }
     setMlAction('rejected');
   }
@@ -1384,22 +1513,30 @@ export function ImportTransactionsModal({
                 {t('ML Category Predictions')}
               </Text>
               <Text style={{ fontSize: 13, color: theme.pageTextSubdued, marginBottom: 16 }}>
-                {t('The model predicted categories for {{count}} transactions. Review and confirm or reject them.', { count: mlPreds.length })}
+                {t('The model predicted categories for {{count}} transactions. Review them, edit categories if needed, and then confirm or reject them.', { count: mlPreds.length })}
               </Text>
 
               <View style={{ maxHeight: 350, overflow: 'auto', border: '1px solid ' + (theme.tableBorder || '#ddd'), borderRadius: 4 }}>
                 <View style={{ display: 'flex', flexDirection: 'row', backgroundColor: theme.tableHeaderBackground, padding: '8px 12px', fontWeight: 600, fontSize: 13 }}>
                   <Text style={{ flex: 3 }}>{t('Payee')}</Text>
                   <Text style={{ flex: 2, textAlign: 'right', paddingRight: 16 }}>{t('Amount')}</Text>
-                  <Text style={{ flex: 3, paddingLeft: 16 }}>{t('Predicted Category')}</Text>
-                  <Text style={{ flex: 1, textAlign: 'right' }}>{t('Confidence')}</Text>
+                  <Text style={{ flex: 4, paddingLeft: 16 }}>{t('Category')}</Text>
                 </View>
                 {mlPreds.map((p, i) => (
                   <View key={i} style={{ display: 'flex', flexDirection: 'row', padding: '6px 12px', borderBottom: '1px solid ' + (theme.tableBorder || '#ddd'), fontSize: 13 }}>
                     <Text style={{ flex: 3 }}>{p.payee}</Text>
                     <Text style={{ flex: 2, textAlign: 'right', paddingRight: 16, fontVariantNumeric: 'tabular-nums' }}>{(p.amount / 100).toFixed(2)}</Text>
-                    <Text style={{ flex: 3, paddingLeft: 16, fontWeight: 500 }}>{p.category}</Text>
-                    <Text style={{ flex: 1, textAlign: 'right', color: p.confidence >= 0.8 ? (theme.noticeTextDark || '#1a7f37') : theme.pageTextSubdued }}>{Math.round(p.confidence * 100)}%</Text>
+                    <View style={{ flex: 4, paddingLeft: 16 }}>
+                      <Select
+                        value={p.selectedCategory}
+                        defaultLabel={t('(none)')}
+                        options={mlCategoryOptions}
+                        onChange={value => {
+                          void onMlCategoryChange(p.id, String(value));
+                        }}
+                        style={{ width: '100%' }}
+                      />
+                    </View>
                   </View>
                 ))}
               </View>
