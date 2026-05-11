@@ -2,15 +2,6 @@
 
 An end-to-end MLOps system that automatically categorizes personal finance transactions inside [ActualBudget](https://actualbudget.com). Built on a three-layer ML pipeline: a population-level classifier, a per-user personalization layer, and a custom-category discovery layer.
 
-## Team
-
-| Member | Responsibility |
-|---|---|
-| Saketh | Data pipeline |
-| Riyam | Model training + evaluation |
-| Jayraj | Serving |
-| Puneeth | DevOps / Infrastructure |
-
 ---
 
 ## System Overview
@@ -225,10 +216,11 @@ docker run --rm --network host \
 **Retraining:** `training/retrain.py` — triggered by the batch pipeline when new user feedback is available. Uses a separate, looser quality gate (`quality_gate_retrain` in `config.yaml`: weighted F1 ≥ 0.82, macro F1 ≥ 0.82) because user feedback data is inherently class-imbalanced. Promotes if candidate accuracy ≥ production accuracy (no minimum delta required — flat accuracy on user-augmented data is already a success signal).
 
 **Evaluation datasets:**
+
 - `data/processed/eval_cex.csv` — 2024 CEX data (in-distribution)
 - `data/processed/eval_moneydata.csv` — UK MoneyData (out-of-distribution)
 
-See [`training/README.md`](training/README.md) for Docker build/run commands.
+See `[training/README.md](training/README.md)` for Docker build/run commands.
 
 ---
 
@@ -243,10 +235,11 @@ See [`training/README.md`](training/README.md) for Docker build/run commands.
 **Cold-start:** New users automatically accumulate history on every prediction. Layer 2 activates once the threshold is crossed — no manual intervention needed.
 
 **Evaluation:**
+
 - **CEX** (`model_pipeline/evaluate.py`): builds store from `train.csv` (2022), evaluates Layer 1+2 on `eval_cex.csv` (2024). Logs weighted F1, macro F1, Layer 2 routing %.
 - **MoneyData sliding window** (`evaluate_moneydata_sliding.py`): iterates eval years 2015–2022, each time using all prior years as the bootstrap store. Shows how F1 and routing % improve as history accumulates.
 
-See [`model_pipeline/layer2/README.md`](model_pipeline/layer2/README.md) for Docker build/run commands.
+See `[model_pipeline/layer2/README.md](model_pipeline/layer2/README.md)` for Docker build/run commands.
 
 ---
 
@@ -254,9 +247,9 @@ See [`model_pipeline/layer2/README.md`](model_pipeline/layer2/README.md) for Doc
 
 **What it does:** Runs weekly offline. Clusters each user's transaction embeddings with DBSCAN to find groups of semantically similar payees that may belong to a user-defined category (e.g. a user who frequently visits the same local gym not covered by the 29 standard categories). Each cluster is named by Claude (Anthropic API) and written as a pending suggestion to Postgres. The user can approve or reject suggestions through ActualBudget.
 
-**Pipeline (`pipeline.py`):** Loads `user_store.pkl` → DBSCAN per user → LLM naming → INSERT into `layer3_suggestions` table with `ON CONFLICT (cluster_id) DO NOTHING`. Logs to the **`layer3-clustering`** MLflow experiment — this experiment is only populated after a production run. In normal weekly operation, `ON CONFLICT DO NOTHING` is intentional — existing pending suggestions are preserved for user review. Only clear pending suggestions (`DELETE FROM layer3_suggestions WHERE status = 'pending'`) if the user store has been rebuilt from scratch (e.g. after a bug fix), since old suggestions will no longer reflect the updated store.
+**Pipeline (`pipeline.py`):** Loads `user_store.pkl` → DBSCAN per user → LLM naming → INSERT into `layer3_suggestions` table with `ON CONFLICT (cluster_id) DO NOTHING`. Logs to the `**layer3-clustering`** MLflow experiment — this experiment is only populated after a production run. In normal weekly operation, `ON CONFLICT DO NOTHING` is intentional — existing pending suggestions are preserved for user review. Only clear pending suggestions (`DELETE FROM layer3_suggestions WHERE status = 'pending'`) if the user store has been rebuilt from scratch (e.g. after a bug fix), since old suggestions will no longer reflect the updated store.
 
-**Evaluation (`evaluate.py`):** Measures cluster quality (silhouette, coverage, noise %) and naming accuracy (LLM suggestion vs. majority ground-truth label on pure clusters). Logs to the **`layer3-evaluation`** MLflow experiment. Does not write to Postgres.
+**Evaluation (`evaluate.py`):** Measures cluster quality (silhouette, coverage, noise %) and naming accuracy (LLM suggestion vs. majority ground-truth label on pure clusters). Logs to the `**layer3-evaluation`** MLflow experiment. Does not write to Postgres.
 
 **Postgres table:** `public.layer3_suggestions` — columns: `user_id`, `cluster_id` (unique), `suggested_category_name`, `payee_list` (TEXT[]), `status` (pending/approved/rejected), `created_at`.
 
@@ -264,17 +257,19 @@ See [`model_pipeline/layer2/README.md`](model_pipeline/layer2/README.md) for Doc
 
 **Evaluation results** (2026-04-27, `user_store_full.pkl`, 400 users, normalized payees):
 
-| Metric | Value |
-|---|---|
-| Mean silhouette | 0.751 |
-| Mean coverage | 0.733 |
-| Mean cluster size | 9.2 payees |
-| Noise % | 19.7% |
-| Naming accuracy | 0.605 (on 2776 pure clusters) |
+
+| Metric            | Value                         |
+| ----------------- | ----------------------------- |
+| Mean silhouette   | 0.751                         |
+| Mean coverage     | 0.733                         |
+| Mean cluster size | 9.2 payees                    |
+| Noise %           | 19.7%                         |
+| Naming accuracy   | 0.605 (on 2776 pure clusters) |
+
 
 Eps sensitivity: tight (0.075) → silhouette=0.734, coverage=0.600 · default (0.150) → silhouette=0.751, coverage=0.733 · loose (0.300) → silhouette=0.586, coverage=0.823
 
-See [`model_pipeline/layer2/README.md`](model_pipeline/layer2/README.md) for Docker build/run commands covering Layer 3 evaluation and pipeline.
+See `[model_pipeline/layer2/README.md](model_pipeline/layer2/README.md)` for Docker build/run commands covering Layer 3 evaluation and pipeline.
 
 ---
 
@@ -294,17 +289,22 @@ data_pipeline/drift_detection/
 ```
 
 **Datasets:**
-| File | Years | Rows | Purpose |
-|---|---|---|---|
-| `data/processed/train.csv` | 2022 | ~48K | Layer 1 training + Layer 2 store build |
-| `data/processed/eval_cex.csv` | 2024 | ~63K | Layer 1+2 evaluation (in-distribution) |
-| `data/processed/eval_moneydata.csv` | 2015–2022 | ~6K | Layer 1+2 sliding window evaluation (OOD, UK) |
-| `data/processed/production.csv` | 2023 | — | Production simulation seed |
+
+
+| File                                | Years     | Rows | Purpose                                       |
+| ----------------------------------- | --------- | ---- | --------------------------------------------- |
+| `data/processed/train.csv`          | 2022      | ~48K | Layer 1 training + Layer 2 store build        |
+| `data/processed/eval_cex.csv`       | 2024      | ~63K | Layer 1+2 evaluation (in-distribution)        |
+| `data/processed/eval_moneydata.csv` | 2015–2022 | ~6K  | Layer 1+2 sliding window evaluation (OOD, UK) |
+| `data/processed/production.csv`     | 2023      | —    | Production simulation seed                    |
+
 
 **Reproducing the data:**
-1. Download CEX PUMD CSV files from https://www.bls.gov/cex/pumd_data.htm
+
+1. Download CEX PUMD CSV files from [https://www.bls.gov/cex/pumd_data.htm](https://www.bls.gov/cex/pumd_data.htm)
 2. Extract the FMLI files for each year
 3. Run:
+
 ```bash
 python generate_transactions.py --year 2022 \
   --input_files fmli222.csv fmli223.csv fmli224.csv fmli231.csv \
@@ -333,16 +333,19 @@ The serving app shares the `artifacts-pvc` with the Layer 3 pipeline — both mo
 
 Prometheus scrapes `/metrics` on the serving app. Key signals:
 
-| Metric | What it tracks |
-|---|---|
-| `serving_prediction_outputs_total` | Prediction volume by category |
-| `serving_prediction_confidence` | Confidence score histogram |
-| `serving_feedback_total` | User correction rate |
+
+| Metric                               | What it tracks                        |
+| ------------------------------------ | ------------------------------------- |
+| `serving_prediction_outputs_total`   | Prediction volume by category         |
+| `serving_prediction_confidence`      | Confidence score histogram            |
+| `serving_feedback_total`             | User correction rate                  |
 | `serving_suggestion_responses_total` | Layer 3 suggestion accept/reject rate |
+
 
 **Promotion:** Conservative — requires ≥ 1 percentage point offline accuracy improvement before updating the production registry.
 
 **Rollback triggers:**
+
 - User correction rate > 25% over 2 hours
 - Low-confidence ratio > 35% over 30 minutes
 - Classify error rate > 5% over 10 minutes
@@ -353,27 +356,33 @@ Prometheus scrapes `/metrics` on the serving app. Key signals:
 
 Deployed on Chameleon Cloud. k3s cluster with ArgoCD for GitOps. All platform services (MLflow, MinIO, Postgres, Prometheus, Grafana) run inside the cluster.
 
-| Service | Internal DNS | External (NodePort) |
-|---|---|---|
-| MLflow | `mlflow.mlops.svc.cluster.local` | `129.114.25.143:30500` |
-| MinIO | `minio.mlops.svc.cluster.local:9000` | `129.114.25.143:30900` |
+
+| Service  | Internal DNS                            | External (NodePort)                               |
+| -------- | --------------------------------------- | ------------------------------------------------- |
+| MLflow   | `mlflow.mlops.svc.cluster.local`        | `129.114.25.143:30500`                            |
+| MinIO    | `minio.mlops.svc.cluster.local:9000`    | `129.114.25.143:30900`                            |
 | Postgres | `postgres.mlops.svc.cluster.local:5432` | ClusterIP only — use `10.43.98.71:5432` from host |
-| Adminer | — | `129.114.25.143:30081` |
+| Adminer  | —                                       | `129.114.25.143:30081`                            |
+
 
 **Adminer access:**
+
 - System: `PostgreSQL`
 - Server: `postgres`
 - Username / password / database: use values from the `postgres-credentials` k8s secret
 
-See [`devops/README.md`](devops/README.md) for cluster setup, Terraform, Ansible, and k3s bootstrap.
+See `[devops/README.md](devops/README.md)` for cluster setup, Terraform, Ansible, and k3s bootstrap.
 
 ---
 
 ## Component READMEs
 
-| README | What it covers |
-|---|---|
-| [`training/README.md`](training/README.md) | Layer 1 training — models, Docker commands for CPU/GPU/sweep/retrain, quality gate, MLflow logging |
-| [`model_pipeline/layer2/README.md`](model_pipeline/layer2/README.md) | Layer 2 + Layer 3 — user store, all evaluation Docker commands, config reference |
-| [`devops/README.md`](devops/README.md) | Cluster setup — Terraform, Ansible, k3s bootstrap, platform services |
-| [`serving/README.md`](serving/README.md) | Serving team overview — UI integration, auth and user isolation, FastAPI + Postgres, and multi-model serving |
+
+| README                                                               | What it covers                                                                                          |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `[training/README.md](training/README.md)`                           | Layer 1 training — models, Docker commands for CPU/GPU/sweep/retrain, quality gate, MLflow logging      |
+| `[model_pipeline/layer2/README.md](model_pipeline/layer2/README.md)` | Layer 2 + Layer 3 — user store, all evaluation Docker commands, config reference                        |
+| `[devops/README.md](devops/README.md)`                               | Cluster setup — Terraform, Ansible, k3s bootstrap, platform services                                    |
+| `[serving/README.md](serving/README.md)`                             | Serving overview — UI integration, auth and user isolation, FastAPI + Postgres, and multi-model serving |
+
+

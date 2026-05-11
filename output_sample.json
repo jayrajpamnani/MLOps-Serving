@@ -1,6 +1,0 @@
-{
-  "transaction_id": "txn_001",
-  "prediction_category": "Groceries",
-  "confidence": 0.87,
-  "model_version": "v1"
-}
